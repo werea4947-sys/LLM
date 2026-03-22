@@ -24,8 +24,8 @@ env/
 *.pt
 
 # 数据集
-*。josnl
-*.josn
+*.jsonl
+*.json
 *.data
 
 # 日志

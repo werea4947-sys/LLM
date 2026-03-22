@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 模型文件（如果不想提交大文件）
+*.pth
+*.bin
+*.safetensors
+*.pt
+
+# 数据集
+*。josnl
+*.josn
+*.data
+
+# 日志
+*.log
+
+minimind_std/

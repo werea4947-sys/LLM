@@ -31,4 +31,5 @@ env/
 # 日志
 *.log
 
+#文件夹
 minimind_std/

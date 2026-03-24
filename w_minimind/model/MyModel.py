@@ -102,6 +102,7 @@ def precompute_freqs_cis(dim:int,end: int = int(32 * 1024),rope_base: float = 1e
     #初始化Rope频率
     freqs=1.0/(rope_base**(torch.arange(0,dim,2)[:(dim//2)].float()/dim))#arange(0,dim,2)为2i简化
     #[:(dim//2)]确保长度正好是维度的一半，因为每两个维度共享一个频率。
+    attn_factor = 1.0
 
     if rope_scaling is not None:
         # 2. 从配置字典中提取 YaRN 的超参数
@@ -137,15 +138,15 @@ def precompute_freqs_cis(dim:int,end: int = int(32 * 1024),rope_base: float = 1e
             # ramp为1时，缩放因子为1/factor，表示最大缩放；
             # ramp在0和1之间时，缩放因子在1和factor之间线性变化。
             freqs=freqs*(1-ramp+ramp/factor)#根据缩放因子调整频率，得到最终的Rope频率。
-        #根据end,生成位置索引t
-        t=torch.arange(end,device=freqs.device).float()
+    #根据end,生成位置索引t
+    t=torch.arange(end,device=freqs.device).float()
 
-        #计算外积，将t和频率freqs相乘，得到每个位置的旋转总角度
-        freqs=torch.outer(t,freqs)
-        freqs_cos=(torch.cat([torch.cos(freqs),torch.cos(freqs)],dim=1)*attn_factor)
-        freqs_sin=(torch.cat([torch.sin(freqs),torch.sin(freqs)],dim=1)*attn_factor)
+    #计算外积，将t和频率freqs相乘，得到每个位置的旋转总角度
+    freqs=torch.outer(t,freqs)
+    freqs_cos=(torch.cat([torch.cos(freqs),torch.cos(freqs)],dim=1)*attn_factor)
+    freqs_sin=(torch.cat([torch.sin(freqs),torch.sin(freqs)],dim=1)*attn_factor)
 
-        return freqs_cos,freqs_sin
+    return freqs_cos,freqs_sin
 
 #编写ROPE位置编码函数
 def apply_rotary_pos_emb(q,k,cos,sin,postion_ids=None,unsqueeze_dim=1):
@@ -383,7 +384,7 @@ class MyMindModel(nn.Module):
         presents=[]
 
         for layer_idx, (layer, past_key_value) in enumerate(
-            zip(self.layers, past_key_value)
+            zip(self.layers, past_key_values)
         ):#循环k次，layer
             hidden_states, present= layer(
                 hidden_states,

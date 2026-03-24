@@ -15,7 +15,7 @@ from torch import optim  # 优化器
 from torch.nn.parallel import DistributedDataParallel  # 分布式数据并行
 from torch.utils.data import DataLoader, DistributedSampler  # 数据加载器
 
-from w_minimind.model.MyModel import MyMindConfig
+from model.MyModel import MyMindConfig
 from dataset.lm_dataset import PretrainDataset
 from trainer.trainer_utils import (  # 训练工具函数
     get_lr,
@@ -64,7 +64,6 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
 
         scaler.scale(loss).backward() # 反向传播，自动缩放梯度以适应混合精度训练
 
-        scaler.scale(loss).backward() # 反向传播
 
         # ✨ 修改：加上 "or step == iters"，确保最后不到 accumulation_steps 数量的剩余 batch 也能更新参数
         if step % args.accumulation_steps == 0 or step == iters:
@@ -75,15 +74,6 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
-
-            # 📚 优化器更新知识点
-            # scaler.step(): 执行参数更新
-            # scaler.update(): 更新scaler的缩放因子
-            scaler.step(optimizer)
-            scaler.update()
-
-            optimizer.zero_grad(set_to_none=True)
 
         if step % args.log_interval == 0 or step == iters:
             spend_time = time.time() - start_time

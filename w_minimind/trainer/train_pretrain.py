@@ -64,9 +64,16 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
 
         scaler.scale(loss).backward() # 反向传播，自动缩放梯度以适应混合精度训练
 
-        if step % args.accumulation_steps == 0:
+        scaler.scale(loss).backward() # 反向传播
+
+        # ✨ 修改：加上 "or step == iters"，确保最后不到 accumulation_steps 数量的剩余 batch 也能更新参数
+        if step % args.accumulation_steps == 0 or step == iters:
             # scaler.unscale_(): 还原梯度的真实值
             scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad(set_to_none=True)
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
 

@@ -246,24 +246,20 @@ class Attention(nn.Module):
         )
 
         ##attention计算
+##attention计算
         if (
-            self.flash  # 如果支持flash attention，并且满足以下条件：
-            # 训练模式，序列长度大于1，没有使用past_key_value，并且没有使用attention_mask或者attention_mask全为1，则直接使用torch的scaled_dot_product_attention函数进行计算。
+            self.flash  
             and (seq_len > 1)
             and (past_key_value is None)
             and (attention_mask is None or torch.all(attention_mask == 1))
         ):
-            attention_mask=(
-                None
-                if attention_mask is None
-                else attention_mask.view(bsz, 1, 1).expand(bsz,self.n_local_heads,seq_len,-1).bool()
-            )
+            # ✨ 修改：既然确定没有 padding (mask全是1)，直接不传 mask，让底层的 is_causal=True 自己处理
             output = F.scaled_dot_product_attention(
                 xq,
                 xk,
                 xv,
-                attention_mask,
-                dropout_p=self.dropout if self.training else 0.0,#训练模式下使用dropout，推理模式下不使用dropout
+                attn_mask=None,  # ✨ 直接改为 None
+                dropout_p=self.dropout if self.training else 0.0,
                 is_causal=True,
             )
         else:
@@ -422,7 +418,20 @@ class MyMindForCausalLM(PreTrainedModel,GenerationMixin):
 
         # #封装输出格式，方便与transformers库的接口兼容
         # self.OUT=CausalLMOutputWithPast()
-    
+    # ✨ 新增：适配 HuggingFace Generate 的 KV-Cache 机制桥接函数
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, **kwargs):
+        # 如果已经有 KV Cache 缓存了，说明是自回归生成的后续步骤
+        # 我们只需要把新生成的最后 1 个 token 喂给模型即可，不用全喂
+        if past_key_values is not None:
+            input_ids = input_ids[:, -1:]
+            
+        return {
+            "input_ids": input_ids,
+            "past_key_values": past_key_values,
+            "use_cache": kwargs.get("use_cache"),
+            "attention_mask": kwargs.get("attention_mask"),
+        }
+
     def forward(self,
                 input_ids: Optional[torch.LongTensor] = None,
                 attention_mask: Optional[torch.Tensor] = None,

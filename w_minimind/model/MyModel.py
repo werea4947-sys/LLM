@@ -85,7 +85,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 class RMSNorm(nn.Module):
 #__init__方法中定义了模型的结构和参数，forward方法中定义了模型的前向传播过程。
     def __init__(self,dim:int,eps:float=1e-5):
-        super().init__()
+        super().__init__()
         self.dim=dim
         self.eps=eps
         self.weight=nn.Parameter(torch.ones(dim))
@@ -335,14 +335,14 @@ class MyMindModel(nn.Module):
     def __init__(self, config: MyMindConfig):
         super().__init__()
         self.config = config
-        self.vacab_size,self.num_hidden_layers=(
+        self.vocab_size,self.num_hidden_layers=(
             config.vocab_size,
             config.num_hidden_layers,
         )
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.dropout = nn.Dropout(config.dropout)
-        self.layer=nn.ModuleList(
+        self.layers=nn.ModuleList(
             MyMindBlock(i, config) for i in range(config.num_hidden_layers)
         )
 
@@ -359,49 +359,51 @@ class MyMindModel(nn.Module):
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
-        def forward(
+    def forward(
                 self,
                 input_ids: Optional[torch.LongTensor] = None,
                 attention_mask: Optional[torch.Tensor] = None,
                 past_key_values:bool = None,
                 **kwargs,
-        ):
-            batch_size, seq_len = input_ids.shape
+     ):
+        batch_size, seq_len = input_ids.shape
 
-            if hasattr(past_key_values,"layers"):
-                past_key_values=None
+        if hasattr(past_key_values,"layers"):
+            past_key_values=None
 
-            past_key_values=past_key_values or [None] * len(self.layer)
+        past_key_values=past_key_values or [None] * len(self.layers)
 
-            start_pose=(
-                past_key_values[0][0].shape[1] if past_key_values[0] is not None else 0
+        start_pos=(
+            past_key_values[0][0].shape[1] if past_key_values[0] is not None else 0
+        )
+
+        hidden_states = self.dropout(self.embed_tokens(input_ids))
+        position_embeddings = (
+            self.freqs_cos[start_pos : start_pos + seq_len], 
+            self.freqs_sin[start_pos : start_pos + seq_len]
+        )
+
+
+        presents=[]
+
+        for layer_idx, (layer, past_key_value) in enumerate(
+            zip(self.layers, past_key_value)
+        ):#循环k次，layer
+            hidden_states, present= layer(
+                hidden_states,
+                position_embeddings,
+                past_key_value=past_key_value,
+                use_cache=past_key_values is not None,
+                attention_mask=attention_mask,
             )
-
-            hidden_states = self.dropout(self.embed_tokens(input_ids))
-            position_embeddings = (
-                self.freqs_cos[start_pose : start_pose + seq_len], 
-                self.freqs_sin[start_pose : start_pose + seq_len]
-            )
-
-
-            presents=[]
-
-            for layer_idx, (layer, past_key_value) in enumerate(
-                zip(self.layers, past_key_value)
-            ):#循环k次，layer
-                hidden_states, present= layer(
-                    hidden_states,
-                    position_embeddings,
-                    past_key_value=past_key_value,
-                    use_cache=past_key_values is not None,
-                    attention_mask=attention_mask,
-                )
                 
-                presents.append(present)
+            presents.append(present)
 
-            hiden_states = self.norm(hidden_states)
+        hiden_states = self.norm(hidden_states)
 
-            return hiden_states, presents
+
+        return hidden_states, presents
+
     
 class MyMindForCausalLM(PreTrainedModel,GenerationMixin):
     config_class = MyMindConfig
@@ -421,38 +423,48 @@ class MyMindForCausalLM(PreTrainedModel,GenerationMixin):
         # #封装输出格式，方便与transformers库的接口兼容
         # self.OUT=CausalLMOutputWithPast()
     
-    def forward(self,input_ids:Optional[torch.LongTensor]=None,
-                attention_mask:Optional[torch.Tensor]=None,
-                past_key_values:Optional[Tuple[Tuple[torch.Tensor, torch.Tensor]]]=None,
-                use_cache:bool=False,
-                logits_to_keep:Union[int,torch.Tensor]=0,
+    def forward(self,
+                input_ids: Optional[torch.LongTensor] = None,
+                attention_mask: Optional[torch.Tensor] = None,
+                labels: Optional[torch.LongTensor] = None,  # ✨ 1. 新增 labels 参数
+                past_key_values: Optional[Tuple[Tuple[torch.Tensor, torch.Tensor]]] = None,
+                use_cache: bool = False,
+                logits_to_keep: Union[int, torch.Tensor] = 0,
                 **args,
         ):
 
-        hidden_stastes,past_key_values=self.model(
+        
+        hidden_states, past_key_values = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             past_key_values=past_key_values,
             use_cache=use_cache,
             **args,
         )
-        #logits_to_keep可以是一个整数，那就保留最后n个位置
-        #生成时，只需关注最后的logits来预测下一个token
-        slice_indings=(slice(-logits_to_keep,None) 
-                       if isinstance(logits_to_keep,int) 
-                       else logits_to_keep
-        )
-        logits=self.lm_head(hidden_stastes[:,slice_indings,:])
+        
+        slice_indings = (slice(-logits_to_keep, None) 
+                       if isinstance(logits_to_keep, int) 
+                       else logits_to_keep)
+        logits = self.lm_head(hidden_states[:, slice_indings, :])
 
-        # self.OUT.__setitem__("last_hidden_state",hidden_stastes)
-        # self.OUT.__setitem__("logits",logits)
-        # self.OUT.__setitem__("past_key_values",past_key_values)
-
-        # return self.OUT
+        loss = None
+        # ✨ 2. 添加标准的自回归语言模型交叉熵 Loss 计算逻辑
+        if labels is not None:
+            # 将 logits 和 labels 错位开：前 n-1 个 token 预测后 n-1 个 token
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            
+            # 展平以便计算交叉熵
+            loss_fct = nn.CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            
+            loss = loss_fct(shift_logits, shift_labels)
 
         output = CausalLMOutputWithPast(
+            loss=loss,  # ✨ 3. 将计算好的 loss 放入输出中
             logits=logits,
             past_key_values=past_key_values,
-            hidden_states=hidden_stastes,
+            hidden_states=hidden_states,
         )
         return output

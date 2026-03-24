@@ -128,7 +128,7 @@ def lm_checkpoint(
 def init_model(
     lm_config,
     from_weight="pretrain",
-    tokenizer_path=None,
+    tokenizer_path="../model",
     save_dir="../out",
     device="cuda",
 ):

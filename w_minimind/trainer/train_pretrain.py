@@ -57,7 +57,7 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
             )  # ！修正：直接传入labels和attention_mask，由模型内部计算loss
 
             loss = (
-                res.loss + res.aux_loss
+                res.loss 
             )  # ！修正：原手动计算loss_fct+loss_mask，现用模型内置的loss
 
             loss = loss / args.accumulation_steps

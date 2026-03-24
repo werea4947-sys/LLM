@@ -1,7 +1,7 @@
 from transformers import PretrainedConfig
 
 #huggingface的类
-class MokioMindConfig(PretrainedConfig):
+class MyMindConfig(PretrainedConfig):
     model_type = "myminimind"
 
     def __init__(
@@ -177,7 +177,7 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 class Attention(nn.Module):
-    def __init__(self, args: MokioMindConfig):
+    def __init__(self, args: MyMindConfig):
         super().__init__()
 
         self.num_key_value_heads = (
@@ -287,7 +287,7 @@ class Attention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, config: MokioMindConfig):
+    def __init__(self, config: MyMindConfig):
         super().__init__()
         if config.intermediate_size is None:
             intermediate_size = int(config.hidden_size * 8 / 3)
@@ -303,8 +303,8 @@ class FeedForward(nn.Module):
         gated = self.act_fn(self.gate_proj(x)) * self.up_proj(x)#门控机制，先通过gate_proj得到一个中间表示，经过激活函数后与up_proj的输出相乘，得到gated张量。
         return self.dropout(self.down_proj(gated))
 
-class MokioMindBlock(nn.Module):
-    def __init__(self, layer_id: int, config: MokioMindConfig):
+class MyMindBlock(nn.Module):
+    def __init__(self, layer_id: int, config: MyMindConfig):
         super().__init__()
         self.num_attention_heads = config.num_attention_heads
         self.hidden_size = config.hidden_size
@@ -331,8 +331,8 @@ class MokioMindBlock(nn.Module):
         return hidden_states, present_key_value
 
 
-class MokioMindModel(nn.Module):
-    def __init__(self, config: MokioMindConfig):
+class MyMindModel(nn.Module):
+    def __init__(self, config: MyMindConfig):
         super().__init__()
         self.config = config
         self.vacab_size,self.num_hidden_layers=(
@@ -343,7 +343,7 @@ class MokioMindModel(nn.Module):
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.dropout = nn.Dropout(config.dropout)
         self.layer=nn.ModuleList(
-            MokioMindBlock(i, config) for i in range(config.num_hidden_layers)
+            MyMindBlock(i, config) for i in range(config.num_hidden_layers)
         )
 
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -403,15 +403,15 @@ class MokioMindModel(nn.Module):
 
             return hiden_states, presents
     
-class MokioMindForCausalLM(PreTrainedModel,GenerationMixin):
-    config_class = MokioMindConfig
+class MyMindForCausalLM(PreTrainedModel,GenerationMixin):
+    config_class = MyMindConfig
 
-    def __init__(self, config: MokioMindConfig):
+    def __init__(self, config: MyMindConfig):
         self.config = config
 
         super().__init__(config)
 
-        self.model=MokioMindModel(config)
+        self.model=MyMindModel(config)
         
         self.lm_head=nn.Linear(config.hidden_size,config.vocab_size,bias=False)
         #权重共享，输出层与嵌入层的权重共享

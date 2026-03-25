@@ -4,7 +4,7 @@ import warnings
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TextStreamer
-from w_minimind.model.MyModel import MyMindConfig, MyMindForCausalLM
+from model.MyModel import MyMindConfig, MyMindForCausalLM
 from model.model_lora import apply_lora, load_lora  # ！修正：原缺少LoRA加载支持
 from trainer.trainer_utils import setup_seed
 
@@ -60,9 +60,9 @@ def main():
     parser.add_argument("--save_dir", default="out", type=str, help="模型权重目录")
     parser.add_argument(
         "--weight",
-        default="full_sft",
+        default="pretrain",
         type=str,
-        help="权重名称前缀（pretrain, full_sft, rlhf, reason, ppo_actor, grpo, spo）",
+        help="权重名称前缀（pretrain, sft, rlhf, reason, ppo_actor, grpo, spo）",
     )
     parser.add_argument(
         "--lora_weight",

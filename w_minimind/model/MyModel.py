@@ -270,6 +270,8 @@ class Attention(nn.Module):
             ).unsqueeze(0).unsqueeze(0)#使用torch.triu函数生成一个上三角矩阵，主对角线以上的元素为负无穷，主对角线及以下的元素为0。这个矩阵的形状是[seq_len, seq_len]，通过unsqueeze(0).unsqueeze(0)将其扩展为[1, 1, seq_len, seq_len]，然后与scores相加，实现了因果掩码的效果，即屏蔽掉未来位置的注意力分数。
 
             if attention_mask is not None:
+                # Keep mask length aligned with the current key length.
+                attention_mask = attention_mask[:, -scores.shape[-1]:]
                 extended_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2)
                 extended_attention_mask = (1.0 - extended_attention_mask) * -1e9
                 scores = scores + extended_attention_mask
@@ -360,19 +362,38 @@ class MyMindModel(nn.Module):
                 self,
                 input_ids: Optional[torch.LongTensor] = None,
                 attention_mask: Optional[torch.Tensor] = None,
-                past_key_values:bool = None,
+                past_key_values: Optional[Tuple[Tuple[torch.Tensor, torch.Tensor], ...]] = None,
+                use_cache: bool = False,
                 **kwargs,
      ):
         batch_size, seq_len = input_ids.shape
 
-        if hasattr(past_key_values,"layers"):
-            past_key_values=None
+        if past_key_values is not None and hasattr(past_key_values, "to_legacy_cache"):
+            # Compatible with newer transformers Cache objects used by generate.
+            past_key_values = past_key_values.to_legacy_cache()
 
-        past_key_values=past_key_values or [None] * len(self.layers)
+        if past_key_values is None:
+            past_key_values = [None] * len(self.layers)
+        else:
+            normalized_past_key_values = []
+            for layer_cache in list(past_key_values):
+                if (
+                    layer_cache is not None
+                    and isinstance(layer_cache, (tuple, list))
+                    and len(layer_cache) >= 2
+                    and layer_cache[0] is not None
+                    and layer_cache[1] is not None
+                ):
+                    normalized_past_key_values.append((layer_cache[0], layer_cache[1]))
+                else:
+                    normalized_past_key_values.append(None)
+            past_key_values = normalized_past_key_values
 
-        start_pos=(
-            past_key_values[0][0].shape[1] if past_key_values[0] is not None else 0
-        )
+        start_pos = 0
+        for layer_cache in past_key_values:
+            if layer_cache is not None:
+                start_pos = layer_cache[0].shape[1]
+                break
 
         hidden_states = self.dropout(self.embed_tokens(input_ids))
         position_embeddings = (
@@ -390,7 +411,7 @@ class MyMindModel(nn.Module):
                 hidden_states,
                 position_embeddings,
                 past_key_value=past_key_value,
-                use_cache=past_key_values is not None,
+                use_cache=use_cache,
                 attention_mask=attention_mask,
             )
                 
@@ -419,12 +440,36 @@ class MyMindForCausalLM(PreTrainedModel,GenerationMixin):
 
         # #封装输出格式，方便与transformers库的接口兼容
         # self.OUT=CausalLMOutputWithPast()
+    @staticmethod
+    def _has_usable_legacy_cache(past_key_values):
+        if past_key_values is None:
+            return False
+        if hasattr(past_key_values, "to_legacy_cache"):
+            past_key_values = past_key_values.to_legacy_cache()
+
+        if not isinstance(past_key_values, (tuple, list)):
+            return False
+
+        for layer_cache in past_key_values:
+            if (
+                layer_cache is not None
+                and isinstance(layer_cache, (tuple, list))
+                and len(layer_cache) >= 2
+                and layer_cache[0] is not None
+                and layer_cache[1] is not None
+            ):
+                return True
+        return False
+
     # ✨ 新增：适配 HuggingFace Generate 的 KV-Cache 机制桥接函数
     def prepare_inputs_for_generation(self, input_ids, past_key_values=None, **kwargs):
         # 如果已经有 KV Cache 缓存了，说明是自回归生成的后续步骤
         # 我们只需要把新生成的最后 1 个 token 喂给模型即可，不用全喂
-        if past_key_values is not None:
+        has_usable_cache = self._has_usable_legacy_cache(past_key_values)
+        if has_usable_cache:
             input_ids = input_ids[:, -1:]
+        else:
+            past_key_values = None
             
         return {
             "input_ids": input_ids,

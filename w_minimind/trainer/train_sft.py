@@ -16,7 +16,7 @@ from torch.nn.parallel import DistributedDataParallel  # 分布式数据并行
 from torch.utils.data import DataLoader, DistributedSampler  # 数据加载器
 
 from model.MyModel import MyMindConfig
-from dataset.lm_dataset import PretrainDataset
+from dataset.lm_dataset import SFTDataset
 from trainer.trainer_utils import (  # 训练工具函数
     get_lr,
     Logger,
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     # ========== 实验跟踪参数 ==========
     parser.add_argument("--use_wandb", action="store_true", help="是否使用wandb")
     parser.add_argument(
-        "--wandb_project", type=str, default="MyMind-Pretrain", help="wandb项目名"
+        "--wandb_project", type=str, default="MyMind-sft", help="wandb项目名"
     )
 
     # 解析命令行参数
@@ -283,7 +283,7 @@ if __name__ == "__main__":
         resume = "must" if wandb_id else None  # 必须恢复到指定实验
 
         # 构建实验名称，包含关键超参数
-        wandb_run_name = f"MyMind-Pretrain-Epoch-{args.epochs}-BatchSize-{args.batch_size}-LearningRate-{args.learning_rate}"
+        wandb_run_name = f"MyMind-sft-Epoch-{args.epochs}-BatchSize-{args.batch_size}-LearningRate-{args.learning_rate}"
         wandb.init(
             project=args.wandb_project, name=wandb_run_name, id=wandb_id, resume=resume
         )
@@ -300,7 +300,7 @@ if __name__ == "__main__":
     # 初始化模型和分词器
     model, tokenizer = init_model(lm_config, args.from_weight, device=args.device)
 
-    train_ds = PretrainDataset(args.data_path, tokenizer, max_length=args.max_seq_len)
+    train_ds = SFTDataset(args.data_path, tokenizer, max_length=args.max_seq_len)
 
     train_sampler = DistributedSampler(train_ds) if dist.is_initialized() else None
 

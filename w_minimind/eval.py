@@ -60,7 +60,7 @@ def main():
     parser.add_argument("--save_dir", default="out", type=str, help="模型权重目录")
     parser.add_argument(
         "--weight",
-        default="pretrain",
+        default="sft",
         type=str,
         help="权重名称前缀（pretrain, sft, rlhf, reason, ppo_actor, grpo, spo）",
     )

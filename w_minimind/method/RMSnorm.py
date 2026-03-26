@@ -1,5 +1,5 @@
 import torch
-
+import torch.nn as nn
 ##开方求倒数
 t=torch.rsqrt(torch.tensor(4.0))
 print(t)

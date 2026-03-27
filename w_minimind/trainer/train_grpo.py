@@ -329,10 +329,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--reasoning",
         type=int,
-        default=1,
+        default=0,
         choices=[0, 1],
         help="推理模型类型（0=普通模型，1=推理模型）",
-    )
+    ) 
     parser.add_argument(
         "--reward_model_path",
         type=str,

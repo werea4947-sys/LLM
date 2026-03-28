@@ -45,7 +45,7 @@ def logits_to_log_probs(logits, labels):
 
 # DPO的loss计算
 # 公式：L = -log(σ(β * (π(y_w) - π(y_l) - (π_ref(y_w) - π_ref(y_l)))))
-def dpo_loss(ref_log_probs, policy_log_probs, mask, beta):
+def dpo_loss(ref_log_probs, policy_log_probs, mask, beta, return_stats=False):
     seq_lengths = mask.sum(dim=1, keepdim=True).clamp_min(
         1e-8
     )  # ！修正：原clamp_min断裂为独立一行，导致NameError
@@ -66,6 +66,21 @@ def dpo_loss(ref_log_probs, policy_log_probs, mask, beta):
     # DPO损失计算
     logits = pi_logratios - ref_logratios
     loss = -F.logsigmoid(beta * logits)
+
+    if return_stats:
+        rewards = beta * (policy_log_probs - ref_log_probs)
+        chosen_rewards = rewards[: batch_size // 2]
+        rejected_rewards = rewards[batch_size // 2 :]
+        return loss.mean(), {
+            "chosen_ref_log_probs": chosen_ref_log_probs.detach(),
+            "rejected_ref_log_probs": reject_ref_log_probs.detach(),
+            "chosen_policy_log_probs": chosen_policy_log_probs.detach(),
+            "rejected_policy_log_probs": reject_policy_log_probs.detach(),
+            "chosen_rewards": chosen_rewards.detach(),
+            "rejected_rewards": rejected_rewards.detach(),
+            "logits": logits.detach(),
+        }
+
     return loss.mean()
 
 
@@ -118,7 +133,13 @@ def train_epoch(
             policy_log_probs = logits_to_log_probs(logits, y)
 
             # 📚 DPO损失计算
-            dpo_loss_val = dpo_loss(ref_log_probs, policy_log_probs, mask, beta=beta)
+            dpo_loss_val, dpo_stats = dpo_loss(
+                ref_log_probs,
+                policy_log_probs,
+                mask,
+                beta=beta,
+                return_stats=True,
+            )
             loss = (
                     dpo_loss_val #+ outputs.aux_loss
             )  # ！修正：原缺少aux_loss，MoE辅助损失被丢弃
@@ -141,13 +162,38 @@ def train_epoch(
             current_lr = optimizer.param_groups[-1]["lr"]
             eta_min = spend_time / (step + 1) * iters // 60 - spend_time // 60
 
+            chosen_reward_mean = dpo_stats["chosen_rewards"].mean().item()
+            rejected_reward_mean = dpo_stats["rejected_rewards"].mean().item()
+            reward_margin = chosen_reward_mean - rejected_reward_mean
+            chosen_policy_logp = dpo_stats["chosen_policy_log_probs"].mean().item()
+            rejected_policy_logp = dpo_stats["rejected_policy_log_probs"].mean().item()
+            chosen_ref_logp = dpo_stats["chosen_ref_log_probs"].mean().item()
+            rejected_ref_logp = dpo_stats["rejected_ref_log_probs"].mean().item()
+            dpo_logits_mean = dpo_stats["logits"].mean().item()
+            dpo_acc = (
+                dpo_stats["chosen_rewards"] > dpo_stats["rejected_rewards"]
+            ).float().mean().item()
+
             Logger(
-                f"Epoch:[{epoch + 1}/{args.epochs}]({step}/{iters}) loss:{current_loss:.6f} lr:{current_lr:.12f} epoch_Time:{eta_min}min:"
+                f"Epoch:[{epoch + 1}/{args.epochs}]({step}/{iters}) loss:{current_loss:.6f} reward_margin:{reward_margin:.6f} lr:{current_lr:.12f} epoch_Time:{eta_min}min:"
             )
 
             if wandb:
                 wandb.log(
-                    {"loss": current_loss, "lr": current_lr, "epoch_Time": eta_min}
+                    {
+                        "loss": current_loss,
+                        "lr": current_lr,
+                        "epoch_Time": eta_min,
+                        "reward/chosen": chosen_reward_mean,
+                        "reward/rejected": rejected_reward_mean,
+                        "reward/margin": reward_margin,
+                        "logprob/policy_chosen": chosen_policy_logp,
+                        "logprob/policy_rejected": rejected_policy_logp,
+                        "logprob/ref_chosen": chosen_ref_logp,
+                        "logprob/ref_rejected": rejected_ref_logp,
+                        "dpo/logits": dpo_logits_mean,
+                        "dpo/accuracy": dpo_acc,
+                    }
                 )
 
         # 📚 模型保存

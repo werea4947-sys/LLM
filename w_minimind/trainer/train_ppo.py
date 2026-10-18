@@ -441,7 +441,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--clip_epsilon",
         type=float,
-        default=0.1,
+        default=0.2,
         help="PPO裁剪参数（控制策略更新幅度）",
     )
     parser.add_argument("--vf_coef", type=float, default=0.5, help="Value function系数")

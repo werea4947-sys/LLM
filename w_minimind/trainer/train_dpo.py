@@ -256,7 +256,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--learning_rate",
         type=float,
-        default=4e-8,
+        default=5e-8,
         help="初始学习率（建议<=5e-8避免遗忘）",
     )
 

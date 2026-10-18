@@ -11,6 +11,7 @@ venv/
 env/
 .venv/
 
+
 # IDE
 .vscode/
 .idea/
@@ -32,4 +33,4 @@ env/
 *.log
 
 #文件夹
-minimind_std/
+dataset/
